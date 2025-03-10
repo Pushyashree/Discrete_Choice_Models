@@ -1,0 +1,201 @@
+---
+title: "Multinomial Logit Model: A Discrete Choice Analysis"
+author: "Pushya Shree Konasale Jayaramu"
+output: html_document
+---
+
+# Introduction  
+
+This project implements a **Multinomial Logit Model (MNL)** to analyze discrete choices among transportation modes. The model estimates mode choice probabilities based on individual and alternative-specific attributes.  
+
+---
+
+## Required Libraries  
+
+```{r, message=FALSE, warning=FALSE}
+# Install necessary packages if not installed
+if (!require("mlogit")) install.packages("mlogit", dependencies=TRUE)
+if (!require("corrplot")) install.packages("corrplot", dependencies=TRUE)
+if (!require("ggplot2")) install.packages("ggplot2", dependencies=TRUE)
+if (!require("reshape2")) install.packages("reshape2", dependencies=TRUE)
+
+# Load libraries
+library(mlogit)
+library(corrplot)
+library(ggplot2)
+library(reshape2)
+```
+
+## Data
+
+The dataset contains individual characteristics (age, gender, income) and mode-specific attribute (travel time). Two datasets are used for each region:
+
+1. Hersching
+- **Training Data:** `1.h.csv`  
+- **Test Data:** `1.h.test.csv`
+
+2. Moosach
+- **Training Data:** `1.m.csv`  
+- **Test Data:** `1.m.test.csv`
+
+## Read and Inspect Data
+```{r}
+# Read data
+setwd("F:/onedrive/Mode Choice")
+fit_data <- read.csv("1.h.csv", sep = ",")
+
+# Summary statistics
+summary(fit_data)
+
+# Check unique mode choices
+unique(fit_data$mode)
+prop.table(table(fit_data$mode))
+
+```
+
+## Correlation Analysis
+```{r, fig.width=10, fig.height=6}
+# Check correlation among key variables
+cormtx <- cor(data.frame(fit_data$age, fit_data$gender, fit_data$income, fit_data$auto_avail))
+corrplot(cormtx, method = "number")
+
+```
+
+## Visualizing Income Distribution Across Modes
+```{r, fig.width=10, fig.height=6}
+ggplot(fit_data, aes(mode, income)) + 
+  geom_boxplot() + 
+  xlab("Mode") + 
+  ylab("Income Distribution")
+
+```
+
+
+## Convert Data to mlogit Format
+```{r}
+logit_data <- mlogit.data(fit_data, choice = "mode", shape = "wide", varying = 8:11)
+View(as.data.frame(logit_data))
+
+```
+
+## Estimate Multinomial Logit Models
+
+```{r, results="hide"}
+# Model 1: Base model with travel time
+mnl_fit1 <- mlogit(mode ~ 0 | auto_avail | ttime, data = logit_data, weights = weight)
+summary(mnl_fit1)
+
+# Model 2: Mode choice based on age
+mnl_fit2 <- mlogit(mode ~ ttime | age | 0, data = logit_data, weights = weight, reflevel = "evtol")
+summary(mnl_fit2)
+
+# Model 3: Age and income as person-specific variables
+mnl_fit3 <- mlogit(mode ~ 0 | age + income | ttime, data = logit_data, weights = weight)
+summary(mnl_fit3)
+
+# Model 4: Adding auto availability
+mnl_fit4 <- mlogit(mode ~ 0 | age + income + auto_avail | ttime, data = logit_data, weights = weight)
+summary(mnl_fit4)
+
+# Try and fit number of models based on field specific knowledge
+```
+
+
+## Add Binary Variables for Modes
+```{r, results="hide"}
+logit_data$transit <- ifelse(logit_data$alt=="transit", 1, 0)
+logit_data$taxi <- ifelse(logit_data$alt=="taxi", 1, 0)
+logit_data$evtol <- ifelse(logit_data$alt=="evtol", 1, 0)
+logit_data$car <- ifelse(logit_data$alt=="car", 1, 0)
+
+```
+
+## Final Multinomial Logit Models
+```{r}
+# Final Model for Moosach: Including interaction terms
+#mnl_fit12 <- mlogit(mode ~ I(age*taxi) + I(age*evtol) + I(income*evtol) + 
+#                     I(ttime*evtol) + I(ttime*taxi) + I(ttime*transit) | 
+#                     auto_avail | 0, data = logit_data, weights = fit_data$weight)
+#summary(mnl_fit12)
+
+# Final Model for Hersching: Different interactions
+mnl_fit13 <- mlogit(mode ~ I(income*transit) + I(age*taxi) + I(age*evtol) + 
+                     I(auto_avail*transit) + I(ttime*evtol) + I(ttime*taxi) | 
+                     1 | 0, data = logit_data, weights = weight)
+summary(mnl_fit13)
+
+```
+
+## Extracting Model Coefficients
+```{r}
+mnl_coeff <- data.frame(coefficients(mnl_fit13))
+View(mnl_coeff)
+
+```
+
+## Comparing Predicted vs Actual Mode Shares
+```{r}
+# Predicted mode shares
+model <- apply(predict(mnl_fit13, newdata = logit_data), 2, weighted.mean, w = fit_data$weight)
+
+# Actual mode shares
+actual <- prop.table(xtabs(weight ~ mode, data = fit_data))
+
+# Combine results
+combine_fits <- cbind(model, actual)
+combine_fits
+
+```
+
+## Predict Mode Choice on Test Data
+```{r}
+# Read test dataset
+setwd("F:/onedrive/Mode Choice")
+test_data <- read.csv("1.h.test.csv")
+
+# Convert test dataset
+logit_test_data <- mlogit.data(test_data, choice = "mode", shape = "wide", varying = 8:11)
+
+# Add binary mode indicators
+logit_test_data$evtol <- ifelse(logit_test_data$alt=="evtol", 1, 0)
+logit_test_data$transit <- ifelse(logit_test_data$alt=="transit", 1, 0)
+logit_test_data$car <- ifelse(logit_test_data$alt=="car", 1, 0)
+logit_test_data$taxi <- ifelse(logit_test_data$alt=="taxi", 1, 0)
+
+# Predict mode shares on test data
+predict(mnl_fit13, newdata = logit_test_data, weights = test_data$weight)
+
+```
+
+## Compare Predictions
+```{r}
+# Aggregated predictions
+test_predicted <- apply(predict(mnl_fit13, newdata = logit_test_data), 2, weighted.mean, w = test_data$weight)
+test_actual <- prop.table(xtabs(weight ~ mode, data = test_data))
+
+# Combine results
+combine_fits <- cbind(combine_fits, test_predicted, test_actual)
+combine_fits
+
+```
+
+## Visualizing Actual vs Predicted Mode Shares
+```{r, fig.width=10, fig.height=6}
+# Reshape data for plotting
+melted_data <- melt(combine_fits)
+names(melted_data) <- c("mode", "dataset", "value")
+
+# Plot comparison
+ggplot(melted_data, aes(mode, value)) + 
+  geom_bar(aes(fill = dataset), position = "dodge", stat = "identity") + 
+  xlab("Mode") + 
+  ylab("Percent Share") +
+  ggtitle("Predicted vs Actual Mode Shares")
+
+```
+
+## Conclusion
+1. The Multinomial Logit Model successfully estimated mode choices based on age, income, travel time, and auto availability.
+2. Interaction effects helped reveal differences in mode preference among individuals.
+3. Model predictions were validated against a test dataset, with reasonable alignment to actual mode shares.
+4. Further improvements could explore Nested Logit Models or additional attributes like cost and convenience.
