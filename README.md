@@ -2,6 +2,7 @@
 
 This project presents a **Multinomial Logit (MNL) Model** analysis on mode choice behavior for the introduction of **electric vertical take-off and landing (eVTOL) air taxis** in Munich. The study investigates **urban vs. suburban mode choice behavior**, evaluating key socio-demographic and travel-related factors influencing the adoption of eVTOLs.
 
+Note: Please check this link out to view entire analysis. [DCM](https://pushyashree.github.io/Discrete_Choice_Models/)
 ---
 
 ## 📌 Project Overview  
